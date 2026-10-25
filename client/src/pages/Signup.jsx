@@ -1,21 +1,24 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../api/api";
+import { useAuth } from "../hooks/useAuth";
+import { toast } from "sonner"
 
 const Signup = () => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleSignup = async (e) => {
     e.preventDefault();
     try {
       const res = await API.post("/auth/signup", { name, email, password });
-      localStorage.setItem("token", res.data.token);
+     login(res.data.token);
       navigate("/");
     } catch (err) {
-      alert(err.response?.data?.msg || "Signup failed");
+      toast.error(err.response?.data?.msg || "Signup failed");
     }
   };
 

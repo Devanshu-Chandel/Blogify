@@ -1,99 +1,110 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import API from "../api/api";
-import { PlusCircle, Edit, Trash2, User } from "lucide-react";
+import { useAuth } from "../hooks/useAuth";
+import PostCard from "../components/PostCard";
+import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 
 const Posts = () => {
   const [posts, setPosts] = useState([]);
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [editing, setEditing] = useState(null);
-  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const { isLoggedIn } = useAuth();
+
+  // wait 400ms after typing stops before searching, and go back to page 1
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [search]);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) return navigate("/login");
-
-    API.get("/posts")
-      .then((res) => setPosts(res.data))
-      .catch((err) => console.error(err));
-  }, []);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      if (editing) {
-        await API.put(`/posts/${editing._id}`, { title, content });
-      } else {
-        const res = await API.post("/posts", { title, content });
-        setPosts([res.data, ...posts]);
-      }
-      setTitle("");
-      setContent("");
-      setEditing(null);
-    } catch (err) {
-      alert(err.response?.data?.msg || "Failed to save post");
-    }
-  };
-
-  const handleDelete = async (id) => {
-    try {
-      await API.delete(`/posts/${id}`);
-      setPosts(posts.filter((post) => post._id !== id));
-    } catch (err) {
-      alert("Failed to delete post");
-    }
-  };
-
-  const handleEdit = (post) => {
-    setTitle(post.title);
-    setContent(post.content);
-    setEditing(post);
-  };
+    setLoading(true);
+    setError("");
+    API.get("/posts", { params: { page, limit: 6, search: debouncedSearch } })
+      .then((res) => {
+        setPosts(res.data.posts);
+        setTotalPages(res.data.totalPages);
+      })
+      .catch((err) => {
+        console.error(err);
+        setError(err.response?.data?.msg || "Could not load posts. Is the server running?");
+      })
+      .finally(() => setLoading(false));
+  }, [page, debouncedSearch]);
 
   return (
     <div className="max-w-2xl mx-auto">
-      <form onSubmit={handleSubmit} className="space-y-4 mb-6">
-        <input type="text" 
-              placeholder="Title"
-              value={title}
-              onChange={(e) =>{setTitle(e.target.value)} }
-              required
-              className="w-full border p-2 rounded"
-        />
-        <textarea 
-        className="w-full border p-2 rounded"
-        placeholder="Content"
-        value={content}
-        onChange={(e) => {setContent(e.target.value)}}
-        required
-        ></textarea>
-        
-        <button className=" bg-blue-500 text-white px-4 py-2 rounded
-        ">
-          {editing ? 'Update post' : 'Add post'}
-        </button>
-      </form>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-bold">Latest posts</h2>
+        {isLoggedIn ? (
+          <Link to="/write" className="bg-blue-500 text-white px-4 py-2 rounded">
+            Write a post
+          </Link>
+        ) : (
+          <p className="text-sm text-gray-600">
+            <Link to="/login" className="text-blue-600 font-medium">Login</Link> or{" "}
+            <Link to="/signup" className="text-blue-600 font-medium">sign up</Link> to write
+          </p>
+        )}
+      </div>
 
-      <ul className="space-y-4">
-        {posts.map((post) => (
-          <li key={post._id} className="border p-4 rounded">
-            <h3 className="text-lg font-bold">{post.title}</h3>
-            <p>{post.content}</p>
-            <p className="text-sm text-gray-500">
-              <User className="inline h-4 w-4" /> {post.author?.name || "Unknown"}
-            </p>
-            <div className="space-x-2 mt-2">
-              <button onClick={() => handleEdit(post)} className="text-blue-600">
-                <Edit className="inline h-4 w-4 mr-1" /> Edit
-              </button>
-              <button onClick={() => handleDelete(post._id)} className="text-red-600">
-                <Trash2 className="inline h-4 w-4 mr-1" /> Delete
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
+      <div className="relative mb-6">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search posts..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full border rounded pl-9 pr-3 py-2 bg-white"
+        />
+      </div>
+
+      {loading && <p className="text-gray-500 text-center">Loading posts...</p>}
+      {error && <p className="text-red-500 text-center">{error}</p>}
+      {!loading && !error && posts.length === 0 && (
+        <p className="text-gray-500 text-center">
+          {debouncedSearch
+            ? `No posts found for "${debouncedSearch}".`
+            : "No posts yet. Write the first one!"}
+        </p>
+      )}
+
+      {!loading && (
+        <ul className="space-y-4">
+          {posts.map((post) => (
+            <PostCard key={post._id} post={post} />
+          ))}
+        </ul>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-4 mt-8">
+          <button
+            onClick={() => setPage((p) => p - 1)}
+            disabled={page === 1}
+            className="flex items-center px-3 py-1 border rounded bg-white disabled:opacity-40"
+          >
+            <ChevronLeft className="h-4 w-4" /> Prev
+          </button>
+          <span className="text-sm text-gray-600">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => p + 1)}
+            disabled={page === totalPages}
+            className="flex items-center px-3 py-1 border rounded bg-white disabled:opacity-40"
+          >
+            Next <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };
